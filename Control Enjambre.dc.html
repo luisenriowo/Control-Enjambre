@@ -35,11 +35,12 @@
     </div>
 
     <div style="display:flex;align-items:center;gap:9px;padding:6px 11px;background:#0e1310;border:1px solid #1d2723;border-radius:4px;">
-      <span style="width:7px;height:7px;border-radius:50%;background:#46d98a;box-shadow:0 0 7px #46d98a;"></span>
+      <span style="width:7px;height:7px;border-radius:50%;background:{{ gateway.dotColor }};box-shadow:0 0 7px {{ gateway.dotColor }};"></span>
       <span style="color:#5d6e63;font-size:10px;letter-spacing:1px;">GATEWAY</span>
       <span style="color:#c2d0c7;font-size:11px;">{{ gateway.port }}</span>
       <span style="color:#5d6e63;font-size:11px;">{{ gateway.baudLabel }}</span>
-      <span style="color:#46d98a;font-size:11px;font-weight:700;">{{ gateway.statusLabel }}</span>
+      <span style="color:{{ gateway.statusColor }};font-size:11px;font-weight:700;">{{ gateway.statusLabel }}</span>
+      <button onClick="{{ toggleSerial }}" style="margin-left:2px;padding:4px 9px;background:#0c100e;border:1px solid #243029;border-radius:3px;color:#c2d0c7;font-family:inherit;font-size:9px;font-weight:700;letter-spacing:1px;cursor:pointer;" style-hover="border-color:#46d98a;">{{ gateway.btnLabel }}</button>
     </div>
 
     <div style="display:flex;align-items:center;gap:7px;">
@@ -246,7 +247,7 @@
               <div style="font-size:11px;letter-spacing:2px;color:#38c8d6;margin-bottom:4px;">(c) ACCIÓN UI → COMANDO</div>
               <div style="font-size:10px;color:#5d6e63;margin-bottom:12px;">Cada gesto del operador se traduce a un objeto del esquema.</div>
               <div style="border:1px solid #1d2723;border-radius:6px;overflow:hidden;">
-                <sc-for list="{{ acts }}" as="a" hint-placeholder-count="7">
+                <sc-for list="{{ acts }}" as="a" hint-placeholder-count="8">
                   <div style="border-bottom:1px solid #11160f;padding:10px 12px;background:{{ a.bg }};">
                     <div style="font-size:11px;color:#c2d0c7;font-weight:700;margin-bottom:4px;">{{ a.a }}</div>
                     <div style="font-size:10px;color:{{ a.cmdColor }};line-height:1.45;word-break:break-word;">{{ a.cmd }}</div>
@@ -304,7 +305,7 @@ class Component extends DCLogic {
       mode:'teleop',
       activeRobot:1,
       conn:{1:true,2:true,3:false},
-      gateway:{port:'/dev/ttyUSB0', baud:115200, connected:true},
+      gateway:{port:'—', baud:115200, connected:false},
       vl:0, va:0,
       clock:'',
       log:[],
@@ -318,6 +319,10 @@ class Component extends DCLogic {
     this._lastTeleopLog = 0;
     this._pad = {up:false, down:false, left:false, right:false};
     this._keys = {};
+    this._lastHB = {1:0, 2:0, 3:0};
+    this._port = null; this._writer = null; this._reader = null;
+    this._closing = false; this._hbT = null;
+    this._enc = new TextEncoder();
   }
 
   componentDidMount(){
@@ -327,12 +332,14 @@ class Component extends DCLogic {
     this._onKeyUp   = (e)=>this.handleKey(e,false);
     window.addEventListener('keydown', this._onKeyDown);
     window.addEventListener('keyup', this._onKeyUp);
-    this.logCmd('SYS','info',{msg:'gateway conectado', port:this.state.gateway.port, baud:this.state.gateway.baud});
+    this.logCmd('SYS','info',{msg:'modo simulado · sin gateway', hint:'pulsa CONECTAR para abrir el puerto serial'});
   }
   componentWillUnmount(){
     clearInterval(this._clock);
     if(this._cd) clearInterval(this._cd);
     if(this._toastT) clearTimeout(this._toastT);
+    if(this._hbT) clearInterval(this._hbT);
+    if(this._port) this.disconnectSerial(false);
     window.removeEventListener('keydown', this._onKeyDown);
     window.removeEventListener('keyup', this._onKeyUp);
   }
@@ -351,8 +358,95 @@ class Component extends DCLogic {
     vl = Math.round(vl*100)/100; va = Math.round(va*100)/100;
     if(!force && now - this._lastTeleopLog < 140) return;
     this._lastTeleopLog = now;
-    this.logCmd('TX','teleop',{tipo:'teleop', robot_id:this.state.activeRobot, v_lineal:vl, v_angular:va});
+    this.txCmd('teleop',{tipo:'teleop', robot_id:this.state.activeRobot, v_lineal:vl, v_angular:va});
   }
+
+  // ---- serial (Web Serial API) ----
+  txCmd(tipo,payload){
+    this.logCmd('TX',tipo,payload);
+    if(this._writer) this._writer.write(this._enc.encode(JSON.stringify(payload)+'\n')).catch(()=>{});
+  }
+
+  toggleSerial = ()=>{ this.state.gateway.connected ? this.disconnectSerial(false) : this.connectSerial(); };
+
+  connectSerial = async ()=>{
+    if(!(navigator.serial && navigator.serial.requestPort)){ this.flashToast('Web Serial no disponible · usa Chrome o Edge'); return; }
+    let port;
+    try{ port = await navigator.serial.requestPort(); }
+    catch(_){ return; } // el usuario canceló el selector
+    try{
+      await port.open({baudRate:this.state.gateway.baud});
+      this._port = port;
+      this._writer = port.writable.getWriter();
+      const info = port.getInfo();
+      const hx=(n)=>(n==null?'????':n.toString(16).padStart(4,'0'));
+      const label = info.usbVendorId!=null ? 'usb:'+hx(info.usbVendorId)+':'+hx(info.usbProductId) : 'serial';
+      this._lastHB = {1:0, 2:0, 3:0};
+      this.setState({gateway:{...this.state.gateway, port:label, connected:true}, conn:{1:false,2:false,3:false}});
+      this.logCmd('SYS','info',{msg:'gateway conectado', port:label, baud:this.state.gateway.baud});
+      this.flashToast('Gateway conectado · esperando heartbeats');
+      this._hbT = setInterval(this.checkHB, 250);
+      this.readLoop(port);
+    }catch(err){
+      try{ await port.close(); }catch(_){}
+      this.flashToast('No se pudo abrir el puerto: '+((err&&err.message)||err));
+    }
+  };
+
+  disconnectSerial = async (porError)=>{
+    if(this._closing) return; this._closing = true;
+    if(this._hbT){ clearInterval(this._hbT); this._hbT=null; }
+    const reader=this._reader, writer=this._writer, port=this._port;
+    this._reader=null; this._writer=null; this._port=null;
+    try{ if(reader){ await reader.cancel().catch(()=>{}); reader.releaseLock(); } }catch(_){}
+    try{ if(writer) writer.releaseLock(); }catch(_){}
+    try{ if(port) await port.close(); }catch(_){}
+    this._closing = false;
+    this.setState({gateway:{...this.state.gateway, port:'—', connected:false}, conn:{1:true,2:true,3:false}});
+    this.logCmd('SYS','info',{msg: porError?'enlace serial perdido':'gateway desconectado', modo:'simulado'});
+    if(porError) this.flashToast('Enlace serial perdido · modo simulado');
+  };
+
+  readLoop = async (port)=>{
+    const dec = new TextDecoder();
+    let buf='';
+    try{
+      this._reader = port.readable.getReader();
+      while(true){
+        const {value, done} = await this._reader.read();
+        if(done) break;
+        buf += dec.decode(value,{stream:true});
+        let i;
+        while((i=buf.indexOf('\n'))>=0){
+          const line = buf.slice(0,i).trim(); buf = buf.slice(i+1);
+          if(line) this.handleLine(line);
+        }
+      }
+    }catch(_){ /* dispositivo desconectado o error de lectura */ }
+    finally{ if(this._port) this.disconnectSerial(true); }
+  };
+
+  handleLine(line){
+    let obj=null;
+    try{ obj=JSON.parse(line); }catch(_){ this.logCmd('RX','info',{raw:line}); return; }
+    if(obj && obj.tipo==='hb' && obj.robot_id>=1 && obj.robot_id<=3){
+      this._lastHB[obj.robot_id]=Date.now();
+      if(!this.state.conn[obj.robot_id]) this.checkHB(); // transición inmediata a OK
+      return; // los hb no se vuelcan al log (~15/s)
+    }
+    this.logCmd('RX',(obj&&obj.tipo)||'info', obj||{raw:line});
+  }
+
+  checkHB = ()=>{
+    if(!this.state.gateway.connected) return;
+    const now=Date.now(), TIMEOUT=1000;
+    const next={}; const cambios=[];
+    [1,2,3].forEach(id=>{ next[id]=(now-(this._lastHB[id]||0))<TIMEOUT; if(next[id]!==this.state.conn[id]) cambios.push(id); });
+    if(cambios.length){
+      cambios.forEach(id=>this.logCmd('SYS','hb',{robot_id:id, enlace: next[id]?'OK':'SIN SEÑAL'}));
+      this.setState({conn:next});
+    }
+  };
 
   // ---- cruceta (D-pad) ----
   applyMove(){
@@ -392,13 +486,13 @@ class Component extends DCLogic {
     const t_start = Date.now()+3000;
     const asignaciones = {};
     [1,2,3].forEach(id=>{ const c=this.state.choreography[id]; asignaciones[id]={primitiva:c.primitiva, params:c.params}; });
-    this.logCmd('TX','coreografia',{tipo:'coreografia', asignaciones, t_start});
+    this.txCmd('coreografia',{tipo:'coreografia', asignaciones, t_start});
     this.setState({countdown:3, tStart:t_start});
     let n=3;
     this._cd=setInterval(()=>{ n-=1; if(n<=0){ clearInterval(this._cd); this._cd=null; this.setState({countdown:null, running:true}); this.logCmd('SYS','run',{msg:'coreografia en ejecucion'}); } else { this.setState({countdown:n}); } },1000);
   };
-  stopAll = ()=>{ if(this._cd){clearInterval(this._cd); this._cd=null;} this.setState({running:false, countdown:null}); this.logCmd('TX','stop_all',{tipo:'stop_all'}); };
-  emergencyStop = ()=>{ if(this._cd){clearInterval(this._cd); this._cd=null;} this.resetPad(); this.setState({running:false, countdown:null}); this.logCmd('TX','stop_all',{tipo:'stop_all', motivo:'PARO_EMERGENCIA'}); this.flashToast('⏻ PARO DE EMERGENCIA · stop_all × 3'); };
+  stopAll = ()=>{ if(this._cd){clearInterval(this._cd); this._cd=null;} this.setState({running:false, countdown:null}); this.txCmd('stop_all',{tipo:'stop_all'}); };
+  emergencyStop = ()=>{ if(this._cd){clearInterval(this._cd); this._cd=null;} this.resetPad(); this.setState({running:false, countdown:null}); this.txCmd('stop_all',{tipo:'stop_all', motivo:'PARO_EMERGENCIA'}); this.flashToast('⏻ PARO DE EMERGENCIA · stop_all × 3'); };
 
   saveChoreo = ()=>{ try{ localStorage.setItem('enjambre_coreo', JSON.stringify(this.state.choreography)); }catch(e){} this.logCmd('SYS','save',{msg:'coreografia guardada (slot local)'}); this.flashToast('Coreografía guardada'); };
   loadChoreo = ()=>{ try{ const raw=localStorage.getItem('enjambre_coreo'); if(raw){ this.setState({choreography:JSON.parse(raw)}); this.logCmd('SYS','load',{msg:'coreografia cargada'}); this.flashToast('Coreografía cargada'); } else { this.flashToast('No hay coreografía guardada'); } }catch(e){} };
@@ -462,8 +556,8 @@ class Component extends DCLogic {
       : [ S.vl>0.05?'ADEL':(S.vl<-0.05?'ATRÁS':''), S.va>0.05?'DER':(S.va<-0.05?'IZQ':'') ].filter(Boolean).join(' · ');
 
     const logRows=S.log.map(l=>({...l,
-      color:{teleop:'#46d98a',coreografia:'#38c8d6',stop_all:'#f0524f',select:'#69786e',info:'#69786e',save:'#e0b24a',load:'#e0b24a',run:'#7af0b0'}[l.tipo]||'#c2d0c7',
-      dirColor: l.dir==='TX'?'#46d98a':(l.dir==='SYS'?'#5d6e63':'#c2d0c7'),
+      color:{teleop:'#46d98a',coreografia:'#38c8d6',stop_all:'#f0524f',select:'#69786e',info:'#69786e',save:'#e0b24a',load:'#e0b24a',run:'#7af0b0',hb:'#69786e'}[l.tipo]||'#c2d0c7',
+      dirColor: l.dir==='TX'?'#46d98a':(l.dir==='SYS'?'#5d6e63':'#38c8d6'),
     }));
 
     const comps=[
@@ -477,8 +571,8 @@ class Component extends DCLogic {
       {c:'Botón STOP',            s:'running=false',                         e:'click → stopAll()'},
       {c:'PARO EMERGENCIA',       s:'siempre habilitado',                    e:'click → emergencyStop() → stop_all'},
       {c:'Guardar / Cargar',      s:'slot localStorage',                     e:'click → saveChoreo() / loadChoreo()'},
-      {c:'Panel gateway',         s:'{port, baud, connected}',               e:'serial open/close'},
-      {c:'Heartbeat robots',      s:'conn{1,2,3}:bool',                      e:'timeout → SIN SEÑAL'},
+      {c:'Panel gateway',         s:'{port, baud, connected}',               e:'CONECTAR → requestPort()+open() · cierre → simulado'},
+      {c:'Heartbeat robots',      s:'conn{1,2,3} · _lastHB[id]',             e:'RX hb → OK · >1 s sin hb → SIN SEÑAL'},
       {c:'Log de comandos',       s:'log[]{ts,dir,tipo,payload}',            e:'append en cada envío · export → .txt'},
     ].map((r,i)=>({...r, bg: i%2? '#0a0e0c':'#0c110e'}));
 
@@ -490,6 +584,7 @@ class Component extends DCLogic {
       {a:'START (coreografía)',          cmd:'{ tipo:"coreografia", asignaciones:{ id:{primitiva,params} }, t_start }', cmdColor:'#38c8d6'},
       {a:'STOP',                         cmd:'{ tipo:"stop_all" }', cmdColor:'#f0524f'},
       {a:'PARO DE EMERGENCIA',           cmd:'{ tipo:"stop_all", motivo:"PARO_EMERGENCIA" }  · prioridad máxima', cmdColor:'#f0524f'},
+      {a:'CONECTAR / DESCONECTAR',       cmd:'— Web Serial: requestPort() + open(115200) · TX NDJSON · RX {tipo:"hb", robot_id}', cmdColor:'#69786e'},
     ].map((r,i)=>({...r, bg: i%2? '#0a0e0c':'#0c110e'}));
 
     const schemaText =
@@ -504,9 +599,13 @@ Coreografía:
 Paro:
   { tipo:"stop_all" }
 
+Heartbeat (RX ◀ gateway):
+  { tipo:"hb", robot_id }   · cada ~200 ms por robot
+
 Transporte:
-  GUI ──serial──▶ ESP32 gateway ──ESP-NOW broadcast──▶ R1 R2 R3
-  START usa t_start común para disparo sincronizado.`;
+  GUI ──Web Serial · NDJSON @115200──▶ ESP32 gateway ──ESP-NOW broadcast──▶ R1 R2 R3
+  START usa t_start común para disparo sincronizado.
+  Sin puerto abierto la GUI opera en modo SIMULADO (solo log).`;
 
     return {
       // tabs / mode
@@ -519,7 +618,14 @@ Transporte:
       runLabel:S.running?'EJECUTANDO':(S.countdown!=null?'CUENTA ATRÁS':'EN ESPERA'),
       runDotColor:S.running?'#46d98a':(S.countdown!=null?'#e0b24a':'#3a463e'),
       // status bar
-      gateway:{port:S.gateway.port, baudLabel:'@'+S.gateway.baud, statusLabel:S.gateway.connected?'CONECTADO':'DESCONECTADO'},
+      gateway:{
+        port:S.gateway.port, baudLabel:'@'+S.gateway.baud,
+        statusLabel:S.gateway.connected?'CONECTADO':'SIMULADO',
+        statusColor:S.gateway.connected?'#46d98a':'#e0b24a',
+        dotColor:S.gateway.connected?'#46d98a':'#e0b24a',
+        btnLabel:S.gateway.connected?'DESCONECTAR':'CONECTAR',
+      },
+      toggleSerial:this.toggleSerial,
       robots, clock:S.clock,
       emergencyStop:this.emergencyStop,
       // teleop (cruceta)
