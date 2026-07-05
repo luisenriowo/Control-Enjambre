@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:#070908;}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+  @keyframes epulse{0%,100%{box-shadow:0 0 0 0 rgba(240,82,79,0)}50%{box-shadow:0 0 16px 1px rgba(240,82,79,.55)}}
+  @keyframes cdpop{0%{transform:scale(.6);opacity:0}40%{transform:scale(1);opacity:1}100%{transform:scale(1.25);opacity:0}}
+  input[type=range]{-webkit-appearance:none;appearance:none;height:4px;border-radius:2px;background:#1c2520;outline:none;}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;background:currentColor;cursor:pointer;box-shadow:0 0 6px currentColor;}
+  ::-webkit-scrollbar{width:8px;height:8px;}
+  ::-webkit-scrollbar-thumb{background:#1d2723;border-radius:4px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+</style>
+</helmet>
+
+<div style="width:1440px;height:900px;display:flex;flex-direction:column;background:#070908;font-family:'JetBrains Mono',monospace;color:#c2d0c7;overflow:hidden;position:relative;user-select:none;">
+
+  <!-- ============ TOP STATUS BAR ============ -->
+  <div style="flex:0 0 54px;display:flex;align-items:center;gap:16px;padding:0 16px;background:#0b0f0d;border-bottom:1px solid #1d2723;">
+    <div style="display:flex;align-items:center;gap:9px;">
+      <span style="color:#46d98a;font-size:16px;">◈</span>
+      <span style="font-size:13px;letter-spacing:2.5px;font-weight:800;color:#d6e2da;">ENJAMBRE·CTRL</span>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:9px;padding:6px 11px;background:#0e1310;border:1px solid #1d2723;border-radius:4px;">
+      <span style="width:7px;height:7px;border-radius:50%;background:#46d98a;box-shadow:0 0 7px #46d98a;"></span>
+      <span style="color:#5d6e63;font-size:10px;letter-spacing:1px;">GATEWAY</span>
+      <span style="color:#c2d0c7;font-size:11px;">{{ gateway.port }}</span>
+      <span style="color:#5d6e63;font-size:11px;">{{ gateway.baudLabel }}</span>
+      <span style="color:#46d98a;font-size:11px;font-weight:700;">{{ gateway.statusLabel }}</span>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:7px;">
+      <span style="color:#5d6e63;font-size:10px;letter-spacing:1px;">HEARTBEAT</span>
+      <sc-for list="{{ robots }}" as="r" hint-placeholder-count="3">
+        <div style="display:flex;align-items:center;gap:6px;padding:5px 9px;background:#0e1310;border:1px solid #1d2723;border-radius:4px;">
+          <span style="width:7px;height:7px;border-radius:50%;background:{{ r.dotColor }};animation:{{ r.dotAnim }};"></span>
+          <span style="font-size:11px;font-weight:700;color:{{ r.color }};">{{ r.label }}</span>
+          <span style="font-size:9px;letter-spacing:.5px;color:{{ r.statusColor }};">{{ r.statusText }}</span>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="flex:1;"></div>
+
+    <div style="text-align:right;line-height:1.2;">
+      <div style="font-size:9px;color:#5d6e63;letter-spacing:1px;">T-CLOCK</div>
+      <div style="font-size:13px;color:#c2d0c7;font-weight:500;">{{ clock }}</div>
+    </div>
+
+    <button onClick="{{ emergencyStop }}" style="margin-left:6px;display:flex;align-items:center;gap:9px;padding:11px 16px;background:#2a0c0c;border:1.5px solid #f0524f;border-radius:5px;color:#ff938f;font-family:inherit;font-size:12px;font-weight:800;letter-spacing:1px;cursor:pointer;animation:epulse 2s infinite;" style-hover="background:#3a1010;">
+      <span style="font-size:15px;">⏻</span> PARO DE EMERGENCIA
+    </button>
+  </div>
+
+  <!-- ============ MODE TABS ============ -->
+  <div style="flex:0 0 40px;display:flex;align-items:stretch;padding:0 16px;background:#0b0f0d;border-bottom:1px solid #1d2723;gap:2px;">
+    <button onClick="{{ goTeleop }}" style="position:relative;display:flex;align-items:center;gap:8px;padding:0 18px;background:transparent;border:none;font-family:inherit;font-size:12px;font-weight:700;letter-spacing:1.5px;color:{{ teleopTabColor }};cursor:pointer;">
+      <span style="font-size:9px;">◀▶</span> TELEOP
+      <sc-if value="{{ showTeleop }}" hint-placeholder-val="{{ true }}"><div style="position:absolute;left:0;right:0;bottom:0;height:2px;background:#46d98a;"></div></sc-if>
+    </button>
+    <button onClick="{{ goCoreo }}" style="position:relative;display:flex;align-items:center;gap:8px;padding:0 18px;background:transparent;border:none;font-family:inherit;font-size:12px;font-weight:700;letter-spacing:1.5px;color:{{ coreoTabColor }};cursor:pointer;">
+      <span style="font-size:11px;">⧉</span> COREOGRAFÍA
+      <sc-if value="{{ showCoreo }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;left:0;right:0;bottom:0;height:2px;background:#38c8d6;"></div></sc-if>
+    </button>
+    <button onClick="{{ goEsquema }}" style="position:relative;display:flex;align-items:center;gap:8px;padding:0 18px;background:transparent;border:none;font-family:inherit;font-size:12px;font-weight:700;letter-spacing:1.5px;color:{{ esquemaTabColor }};cursor:pointer;">
+      <span style="font-size:11px;">≣</span> ESQUEMA
+      <sc-if value="{{ showEsquema }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;left:0;right:0;bottom:0;height:2px;background:#e0b24a;"></div></sc-if>
+    </button>
+    <div style="flex:1;"></div>
+    <div style="display:flex;align-items:center;gap:8px;color:#5d6e63;font-size:10px;letter-spacing:1px;">
+      <span style="width:6px;height:6px;border-radius:50%;background:{{ runDotColor }};"></span>{{ runLabel }}
+    </div>
+  </div>
+
+  <!-- ============ MAIN ROW ============ -->
+  <div style="flex:1;display:flex;min-height:0;">
+
+    <!-- ---------- CONTENT ---------- -->
+    <div style="flex:1;min-width:0;position:relative;">
+
+      <!-- ===== TELEOP ===== -->
+      <sc-if value="{{ showTeleop }}" hint-placeholder-val="{{ true }}">
+      <div data-screen-label="Teleop" style="position:absolute;inset:0;display:flex;padding:16px;gap:16px;">
+
+        <!-- left: selector + telemetry -->
+        <div style="flex:0 0 308px;display:flex;flex-direction:column;gap:14px;">
+          <div style="font-size:10px;letter-spacing:1.5px;color:#5d6e63;">ROBOT ACTIVO</div>
+          <sc-for list="{{ robots }}" as="r" hint-placeholder-count="3">
+            <button onClick="{{ r.onSelect }}" style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:{{ r.selBg }};border:1px solid {{ r.selBorder }};border-radius:6px;cursor:pointer;font-family:inherit;text-align:left;">
+              <span style="font-size:22px;font-weight:800;color:{{ r.color }};min-width:36px;">{{ r.label }}</span>
+              <div style="flex:1;line-height:1.4;">
+                <div style="font-size:10px;letter-spacing:1px;color:{{ r.statusColor }};">{{ r.statusText }}</div>
+                <div style="font-size:10px;color:#5d6e63;">{{ r.selHint }}</div>
+              </div>
+              <span style="font-size:10px;letter-spacing:1px;color:{{ r.selTextColor }};">{{ r.selMark }}</span>
+            </button>
+          </sc-for>
+
+          <div style="margin-top:4px;flex:1;display:flex;flex-direction:column;background:#0e1310;border:1px solid #1d2723;border-radius:6px;padding:14px;gap:11px;">
+            <div style="font-size:10px;letter-spacing:1.5px;color:#5d6e63;border-bottom:1px solid #1d2723;padding-bottom:9px;">TELEMETRÍA · {{ activeLabel }}</div>
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span style="font-size:11px;color:#69786e;">enlace (HB)</span>
+              <span style="font-size:11px;font-weight:700;color:{{ activeStatusColor }};">{{ activeStatusText }}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span style="font-size:11px;color:#69786e;">tx · v_lineal</span>
+              <span style="font-size:13px;font-weight:700;color:#c2d0c7;">{{ vlDisp }}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span style="font-size:11px;color:#69786e;">tx · v_angular</span>
+              <span style="font-size:13px;font-weight:700;color:#c2d0c7;">{{ vaDisp }}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span style="font-size:11px;color:#69786e;">dirección</span>
+              <span style="font-size:12px;font-weight:700;letter-spacing:1px;color:#46d98a;">{{ dirLabel }}</span>
+            </div>
+            <div style="margin-top:auto;font-size:9px;line-height:1.5;color:#4a574e;border-top:1px solid #1d2723;padding-top:9px;">
+              Los robots solo reportan enlace (heartbeat). v_lineal / v_angular = comando emitido, no medición a bordo.
+            </div>
+          </div>
+        </div>
+
+        <!-- center: joystick -->
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0a0e0c;border:1px solid #1d2723;border-radius:6px;position:relative;">
+          <div style="position:absolute;top:14px;left:16px;font-size:10px;letter-spacing:1.5px;color:#5d6e63;">CONTROL DIFERENCIAL</div>
+          <div style="position:absolute;top:14px;right:16px;display:flex;gap:6px;">
+            <span style="font-size:9px;padding:4px 7px;border:1px solid #1d2723;border-radius:3px;color:#69786e;">W·A·S·D</span>
+            <span style="font-size:9px;padding:4px 7px;border:1px solid #1d2723;border-radius:3px;color:#69786e;">ARRASTRAR</span>
+          </div>
+
+          <div style="color:#46d98a;font-size:11px;margin-bottom:6px;font-weight:700;">▲ ADELANTE</div>
+          <div style="display:flex;align-items:center;gap:14px;">
+            <div style="color:#46d98a;font-size:11px;font-weight:700;">◀<br>IZQ</div>
+            <div ref="{{ baseRef }}" onPointerDown="{{ onJoyDown }}" style="width:296px;height:296px;border-radius:50%;background:radial-gradient(circle at center,#10171300 38%,#0e1512 39%,#0a0f0d 100%);border:1.5px solid #243029;position:relative;cursor:grab;touch-action:none;box-shadow:inset 0 0 40px rgba(0,0,0,.6);">
+              <div style="position:absolute;inset:0;border-radius:50%;background:repeating-conic-gradient(from 0deg,#1a241e00 0deg 88deg,#1a241e55 89deg 90deg);"></div>
+              <div style="position:absolute;left:50%;top:50%;width:1px;height:100%;background:#1d2723;transform:translate(-50%,-50%);"></div>
+              <div style="position:absolute;left:50%;top:50%;width:100%;height:1px;background:#1d2723;transform:translate(-50%,-50%);"></div>
+              <div style="position:absolute;left:50%;top:50%;width:88px;height:88px;border:1px dashed #243029;border-radius:50%;transform:translate(-50%,-50%);"></div>
+              <div ref="{{ knobRef }}" style="position:absolute;left:50%;top:50%;width:64px;height:64px;margin:0;border-radius:50%;background:radial-gradient(circle at 35% 30%,#54e89a,#2a9c63);border:2px solid #6ff0ab;box-shadow:0 0 18px rgba(70,217,138,.5),0 6px 14px rgba(0,0,0,.5);transform:translate(-50%,-50%);transition:transform .04s linear;"></div>
+            </div>
+            <div style="color:#46d98a;font-size:11px;font-weight:700;">▶<br>DER</div>
+          </div>
+          <div style="color:#46d98a;font-size:11px;margin-top:6px;font-weight:700;">▼ ATRÁS</div>
+
+          <div style="display:flex;gap:34px;margin-top:22px;">
+            <div style="text-align:center;">
+              <div style="font-size:9px;letter-spacing:1px;color:#5d6e63;">V_LINEAL</div>
+              <div style="font-size:26px;font-weight:800;color:#c2d0c7;">{{ vlDisp }}</div>
+            </div>
+            <div style="width:1px;background:#1d2723;"></div>
+            <div style="text-align:center;">
+              <div style="font-size:9px;letter-spacing:1px;color:#5d6e63;">V_ANGULAR</div>
+              <div style="font-size:26px;font-weight:800;color:#c2d0c7;">{{ vaDisp }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ===== COREOGRAFÍA ===== -->
+      <sc-if value="{{ showCoreo }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Coreografia" style="position:absolute;inset:0;display:flex;flex-direction:column;padding:16px;gap:14px;">
+        <div style="display:flex;gap:14px;flex:1;min-height:0;">
+          <sc-for list="{{ coreoCards }}" as="c" hint-placeholder-count="3">
+            <div style="flex:1;display:flex;flex-direction:column;background:#0e1310;border:1px solid {{ c.cardBorder }};border-radius:6px;overflow:hidden;">
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:13px 15px;border-bottom:1px solid #1d2723;background:{{ c.headBg }};">
+                <span style="font-size:20px;font-weight:800;color:{{ c.color }};">{{ c.label }}</span>
+                <span style="font-size:9px;letter-spacing:1px;color:{{ c.statusColor }};">● {{ c.statusText }}</span>
+              </div>
+              <div style="padding:15px;display:flex;flex-direction:column;gap:14px;flex:1;">
+                <div>
+                  <div style="font-size:9px;letter-spacing:1px;color:#5d6e63;margin-bottom:7px;">PRIMITIVA</div>
+                  <div style="display:flex;gap:6px;">
+                    <sc-for list="{{ c.prims }}" as="p" hint-placeholder-count="3">
+                      <button onClick="{{ p.onClick }}" style="flex:1;padding:8px 4px;background:{{ p.bg }};border:1px solid {{ p.border }};border-radius:4px;color:{{ p.text }};font-family:inherit;font-size:10px;font-weight:700;cursor:pointer;">{{ p.name }}</button>
+                    </sc-for>
+                  </div>
+                </div>
+                <sc-for list="{{ c.params }}" as="pr" hint-placeholder-count="4">
+                  <div style="display:flex;flex-direction:column;gap:6px;">
+                    <div style="display:flex;justify-content:space-between;align-items:baseline;">
+                      <span style="font-size:10px;color:#8a9990;">{{ pr.label }}</span>
+                      <span style="font-size:12px;font-weight:700;color:{{ c.color }};">{{ pr.display }}<span style="font-size:9px;color:#5d6e63;"> {{ pr.unit }}</span></span>
+                    </div>
+                    <input type="range" min="{{ pr.min }}" max="{{ pr.max }}" step="{{ pr.step }}" value="{{ pr.value }}" onInput="{{ pr.onInput }}" style="width:100%;color:{{ c.color }};accent-color:{{ c.color }};" />
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+
+        <!-- action bar -->
+        <div style="flex:0 0 62px;display:flex;align-items:center;gap:12px;padding:0 16px;background:#0b0f0d;border:1px solid #1d2723;border-radius:6px;">
+          <button onClick="{{ saveChoreo }}" style="display:flex;align-items:center;gap:7px;padding:11px 16px;background:#0e1310;border:1px solid #243029;border-radius:5px;color:#c2d0c7;font-family:inherit;font-size:11px;font-weight:700;letter-spacing:.5px;cursor:pointer;" style-hover="border-color:#46d98a;">⤓ GUARDAR</button>
+          <button onClick="{{ loadChoreo }}" style="display:flex;align-items:center;gap:7px;padding:11px 16px;background:#0e1310;border:1px solid #243029;border-radius:5px;color:#c2d0c7;font-family:inherit;font-size:11px;font-weight:700;letter-spacing:.5px;cursor:pointer;" style-hover="border-color:#46d98a;">⤒ CARGAR</button>
+          <div style="flex:1;font-size:10px;color:#4a574e;line-height:1.4;">Los sliders se aplican en el próximo START.<br>START envía 1 comando coreografía con <span style="color:#69786e;">t_start</span> común (sincronía).</div>
+          <button onClick="{{ stopAll }}" style="display:flex;align-items:center;gap:8px;padding:13px 22px;background:#2a0c0c;border:1.5px solid #f0524f;border-radius:5px;color:#ff938f;font-family:inherit;font-size:13px;font-weight:800;letter-spacing:1px;cursor:pointer;">■ STOP</button>
+          <button onClick="{{ startChoreography }}" style="display:flex;align-items:center;gap:8px;padding:13px 30px;background:#0d2a18;border:1.5px solid #46d98a;border-radius:5px;color:#7af0b0;font-family:inherit;font-size:13px;font-weight:800;letter-spacing:2px;cursor:pointer;box-shadow:0 0 14px rgba(70,217,138,.25);" style-hover="background:#103a20;">▶ START</button>
+        </div>
+
+        <!-- countdown overlay -->
+        <sc-if value="{{ hasCountdown }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(7,9,8,.86);z-index:20;">
+            <div style="font-size:12px;letter-spacing:4px;color:#46d98a;margin-bottom:10px;">SINCRONIZANDO · 3 ROBOTS</div>
+            <div style="font-size:180px;font-weight:800;color:#7af0b0;line-height:1;text-shadow:0 0 40px rgba(70,217,138,.5);">{{ countdown }}</div>
+            <div style="font-size:11px;letter-spacing:2px;color:#5d6e63;margin-top:10px;">t_start = {{ tStartDisp }}</div>
+          </div>
+        </sc-if>
+      </div>
+      </sc-if>
+
+      <!-- ===== ESQUEMA (docs b + c) ===== -->
+      <sc-if value="{{ showEsquema }}" hint-placeholder-val="{{ false }}">
+      <div data-screen-label="Esquema" style="position:absolute;inset:0;overflow-y:auto;padding:18px;">
+        <div style="display:flex;gap:18px;align-items:flex-start;">
+
+          <!-- (b) components -->
+          <div style="flex:1.2;min-width:0;">
+            <div style="font-size:11px;letter-spacing:2px;color:#46d98a;margin-bottom:4px;">(b) COMPONENTES · ESTADO · EVENTOS</div>
+            <div style="font-size:10px;color:#5d6e63;margin-bottom:12px;">Mapa de cada control de la GUI a su estado interno y los eventos que dispara.</div>
+            <div style="border:1px solid #1d2723;border-radius:6px;overflow:hidden;">
+              <div style="display:grid;grid-template-columns:1.1fr 1.2fr 1.4fr;background:#0e1310;border-bottom:1px solid #1d2723;font-size:10px;letter-spacing:1px;color:#69786e;">
+                <div style="padding:9px 12px;">COMPONENTE</div><div style="padding:9px 12px;border-left:1px solid #1d2723;">ESTADO</div><div style="padding:9px 12px;border-left:1px solid #1d2723;">EVENTOS</div>
+              </div>
+              <sc-for list="{{ comps }}" as="row" hint-placeholder-count="10">
+                <div style="display:grid;grid-template-columns:1.1fr 1.2fr 1.4fr;border-bottom:1px solid #11160f;background:{{ row.bg }};">
+                  <div style="padding:9px 12px;font-size:11px;color:#c2d0c7;font-weight:500;">{{ row.c }}</div>
+                  <div style="padding:9px 12px;border-left:1px solid #11160f;font-size:10px;color:#8a9990;">{{ row.s }}</div>
+                  <div style="padding:9px 12px;border-left:1px solid #11160f;font-size:10px;color:#69a; ">{{ row.e }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <!-- (c) action -> command + schema -->
+          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:18px;">
+            <div>
+              <div style="font-size:11px;letter-spacing:2px;color:#38c8d6;margin-bottom:4px;">(c) ACCIÓN UI → COMANDO</div>
+              <div style="font-size:10px;color:#5d6e63;margin-bottom:12px;">Cada gesto del operador se traduce a un objeto del esquema.</div>
+              <div style="border:1px solid #1d2723;border-radius:6px;overflow:hidden;">
+                <sc-for list="{{ acts }}" as="a" hint-placeholder-count="7">
+                  <div style="border-bottom:1px solid #11160f;padding:10px 12px;background:{{ a.bg }};">
+                    <div style="font-size:11px;color:#c2d0c7;font-weight:700;margin-bottom:4px;">{{ a.a }}</div>
+                    <div style="font-size:10px;color:{{ a.cmdColor }};line-height:1.45;word-break:break-word;">{{ a.cmd }}</div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+
+            <div>
+              <div style="font-size:11px;letter-spacing:2px;color:#e0b24a;margin-bottom:10px;">ESQUEMA DE COMANDOS (REF)</div>
+              <pre style="margin:0;font-family:inherit;font-size:10.5px;line-height:1.7;color:#8a9990;background:#0a0e0c;border:1px solid #1d2723;border-radius:6px;padding:14px;white-space:pre-wrap;">{{ schemaText }}</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+    </div>
+
+    <!-- ---------- COMMAND LOG RAIL ---------- -->
+    <sc-if value="{{ showLog }}" hint-placeholder-val="{{ true }}">
+    <div style="flex:0 0 344px;display:flex;flex-direction:column;background:#0a0e0c;border-left:1px solid #1d2723;">
+      <div style="flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;padding:13px 14px;border-bottom:1px solid #1d2723;">
+        <div style="font-size:10px;letter-spacing:1.5px;color:#5d6e63;">LOG DE COMANDOS · <span style="color:#c2d0c7;">{{ logCount }}</span></div>
+        <button onClick="{{ exportLog }}" style="padding:6px 11px;background:#0e1310;border:1px solid #243029;border-radius:4px;color:#c2d0c7;font-family:inherit;font-size:10px;font-weight:700;cursor:pointer;" style-hover="border-color:#46d98a;">⤓ EXPORTAR</button>
+      </div>
+      <div ref="{{ logRef }}" style="flex:1;overflow-y:auto;padding:8px 10px;min-height:0;">
+        <sc-for list="{{ logRows }}" as="l" hint-placeholder-count="0">
+          <div style="display:flex;gap:8px;padding:5px 4px;border-bottom:1px solid #0e1310;align-items:flex-start;">
+            <span style="font-size:10px;color:#4a574e;flex:0 0 auto;white-space:nowrap;">{{ l.ts }}</span>
+            <span style="font-size:9px;font-weight:700;color:{{ l.dirColor }};flex:0 0 22px;">{{ l.dir }}</span>
+            <div style="min-width:0;flex:1;">
+              <span style="font-size:9px;font-weight:700;letter-spacing:.5px;color:{{ l.color }};">{{ l.tipo }}</span>
+              <div style="font-size:10px;color:#8a9990;line-height:1.4;word-break:break-all;">{{ l.payload }}</div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+    </sc-if>
+  </div>
+
+  <!-- toast -->
+  <sc-if value="{{ hasToast }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;bottom:18px;left:50%;transform:translateX(-50%);padding:11px 20px;background:#0e1310;border:1px solid #46d98a;border-radius:6px;color:#c2d0c7;font-size:12px;font-weight:600;letter-spacing:.5px;box-shadow:0 8px 24px rgba(0,0,0,.5);z-index:40;">{{ toast }}</div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:900}}">
+class Component extends DCLogic {
+  constructor(props){
+    super(props);
+    this.knobRef = React.createRef();
+    this.baseRef = React.createRef();
+    this.logRef = React.createRef();
+    this.COL = {1:'#46d98a',2:'#38c8d6',3:'#e0b24a'};
+    this.state = {
+      mode:'teleop',
+      activeRobot:1,
+      conn:{1:true,2:true,3:false},
+      gateway:{port:'/dev/ttyUSB0', baud:115200, connected:true},
+      vl:0, va:0,
+      clock:'',
+      log:[],
+      choreography:{
+        1:{primitiva:'normal',   params:{v_angular:1.0, jitter_amp:0.20, jitter_freq:2.0, p_reversa:0.10}},
+        2:{primitiva:'erratico', params:{v_angular:1.6, jitter_amp:0.60, jitter_freq:5.0, p_reversa:0.30}},
+        3:{primitiva:'ansioso',  params:{v_angular:2.2, jitter_amp:0.80, jitter_freq:7.5, p_reversa:0.45}},
+      },
+      countdown:null, tStart:null, running:false, toast:'',
+    };
+    this._lastTeleopLog = 0;
+    this._dragging = false;
+    this._keys = {};
+  }
+
+  componentDidMount(){
+    this.setState({clock:this.fmtClock()});
+    this._clock = setInterval(()=>this.setState({clock:this.fmtClock()}), 200);
+    this._onKeyDown = (e)=>this.handleKey(e,true);
+    this._onKeyUp   = (e)=>this.handleKey(e,false);
+    this._onMove = (e)=>{ if(this._dragging) this.updateJoy(e); };
+    this._onUp   = ()=>{ if(!this._dragging) return; this._dragging=false; this.resetJoy(); window.removeEventListener('pointermove',this._onMove); window.removeEventListener('pointerup',this._onUp); };
+    window.addEventListener('keydown', this._onKeyDown);
+    window.addEventListener('keyup', this._onKeyUp);
+    this.logCmd('SYS','info',{msg:'gateway conectado', port:this.state.gateway.port, baud:this.state.gateway.baud});
+  }
+  componentWillUnmount(){
+    clearInterval(this._clock);
+    if(this._cd) clearInterval(this._cd);
+    if(this._toastT) clearTimeout(this._toastT);
+    window.removeEventListener('keydown', this._onKeyDown);
+    window.removeEventListener('keyup', this._onKeyUp);
+    window.removeEventListener('pointermove', this._onMove);
+    window.removeEventListener('pointerup', this._onUp);
+  }
+
+  fmtClock(d){ d = d || new Date(); const p=(n,l=2)=>String(n).padStart(l,'0'); return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(),3)}`; }
+  hexA(hex,a){ const n=parseInt(hex.slice(1),16); return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`; }
+
+  logCmd(dir,tipo,payload){
+    const ts = this.fmtClock();
+    this.setState(s=>({ log:[...s.log, {id:Math.random(), ts, dir, tipo, payload:JSON.stringify(payload)}].slice(-400) }),
+      ()=>{ const el=this.logRef.current; if(el) el.scrollTop = el.scrollHeight; });
+  }
+
+  sendTeleop(vl,va,force){
+    const now = performance.now();
+    vl = Math.round(vl*100)/100; va = Math.round(va*100)/100;
+    if(!force && now - this._lastTeleopLog < 140) return;
+    this._lastTeleopLog = now;
+    this.logCmd('TX','teleop',{tipo:'teleop', robot_id:this.state.activeRobot, v_lineal:vl, v_angular:va});
+  }
+
+  // ---- joystick ----
+  joyR(){ const b=this.baseRef.current; if(!b) return 100; const r=b.getBoundingClientRect(); return r.width/2 - 36; }
+  moveKnob(dx,dy){ const k=this.knobRef.current; if(k) k.style.transform=`translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`; }
+  onJoyDown = (e)=>{ this._dragging=true; window.addEventListener('pointermove',this._onMove); window.addEventListener('pointerup',this._onUp); this.updateJoy(e); };
+  updateJoy(e){
+    const base=this.baseRef.current; if(!base) return;
+    const r=base.getBoundingClientRect();
+    const cx=r.left+r.width/2, cy=r.top+r.height/2;
+    let dx=e.clientX-cx, dy=e.clientY-cy;
+    const R=this.joyR(); const dist=Math.hypot(dx,dy);
+    if(dist>R){ dx=dx/dist*R; dy=dy/dist*R; }
+    this.moveKnob(dx,dy);
+    const va=dx/R, vl=-dy/R;
+    this.setState({va, vl});
+    this.sendTeleop(vl,va,false);
+  }
+  resetJoy(){ this.moveKnob(0,0); this.setState({va:0, vl:0}); this.sendTeleop(0,0,true); }
+
+  handleKey(e,down){
+    const k=(e.key||'').toLowerCase();
+    if(!['w','a','s','d'].includes(k)) return;
+    if(this.state.mode!=='teleop') return;
+    e.preventDefault();
+    if(this._keys[k]===down) return;
+    this._keys[k]=down;
+    const vl=(this._keys['w']?1:0)+(this._keys['s']?-1:0);
+    const va=(this._keys['d']?1:0)+(this._keys['a']?-1:0);
+    const R=this.joyR();
+    this.moveKnob(Math.max(-R,Math.min(R,va*R)), Math.max(-R,Math.min(R,-vl*R)));
+    this.setState({vl, va});
+    this.sendTeleop(vl,va, (vl===0&&va===0));
+  }
+
+  // ---- choreography ----
+  selectRobot(id){ this.setState({activeRobot:id}); this.logCmd('SYS','select',{robot_id:id}); }
+  setPrimitive(robot,p){ this.setState(s=>({choreography:{...s.choreography,[robot]:{...s.choreography[robot],primitiva:p}}})); }
+  setParam(robot,key,val){ val=parseFloat(val); this.setState(s=>({choreography:{...s.choreography,[robot]:{...s.choreography[robot],params:{...s.choreography[robot].params,[key]:val}}}})); }
+
+  startChoreography = ()=>{
+    if(this.state.running || this.state.countdown!=null) return;
+    const t_start = Date.now()+3000;
+    const asignaciones = {};
+    [1,2,3].forEach(id=>{ const c=this.state.choreography[id]; asignaciones[id]={primitiva:c.primitiva, params:c.params}; });
+    this.logCmd('TX','coreografia',{tipo:'coreografia', asignaciones, t_start});
+    this.setState({countdown:3, tStart:t_start});
+    let n=3;
+    this._cd=setInterval(()=>{ n-=1; if(n<=0){ clearInterval(this._cd); this._cd=null; this.setState({countdown:null, running:true}); this.logCmd('SYS','run',{msg:'coreografia en ejecucion'}); } else { this.setState({countdown:n}); } },1000);
+  };
+  stopAll = ()=>{ if(this._cd){clearInterval(this._cd); this._cd=null;} this.setState({running:false, countdown:null}); this.logCmd('TX','stop_all',{tipo:'stop_all'}); };
+  emergencyStop = ()=>{ if(this._cd){clearInterval(this._cd); this._cd=null;} this.resetJoy(); this.setState({running:false, countdown:null}); this.logCmd('TX','stop_all',{tipo:'stop_all', motivo:'PARO_EMERGENCIA'}); this.flashToast('⏻ PARO DE EMERGENCIA · stop_all × 3'); };
+
+  saveChoreo = ()=>{ try{ localStorage.setItem('enjambre_coreo', JSON.stringify(this.state.choreography)); }catch(e){} this.logCmd('SYS','save',{msg:'coreografia guardada (slot local)'}); this.flashToast('Coreografía guardada'); };
+  loadChoreo = ()=>{ try{ const raw=localStorage.getItem('enjambre_coreo'); if(raw){ this.setState({choreography:JSON.parse(raw)}); this.logCmd('SYS','load',{msg:'coreografia cargada'}); this.flashToast('Coreografía cargada'); } else { this.flashToast('No hay coreografía guardada'); } }catch(e){} };
+
+  exportLog = ()=>{
+    const lines = this.state.log.map(l=>`${l.ts}  ${l.dir.padEnd(3)}  ${l.tipo.padEnd(11)} ${l.payload}`);
+    const header = `# Enjambre · log de comandos\n# exportado ${new Date().toISOString()}\n# columnas: timestamp  dir  tipo  payload\n`;
+    const blob = new Blob([header+lines.join('\n')+'\n'], {type:'text/plain'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url; a.download=`enjambre_log_${Date.now()}.txt`; a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    this.flashToast('Log exportado ('+this.state.log.length+' eventos)');
+  };
+
+  flashToast(t){ this.setState({toast:t}); if(this._toastT) clearTimeout(this._toastT); this._toastT=setTimeout(()=>this.setState({toast:''}),2400); }
+
+  renderVals(){
+    const S=this.state, C=this.COL;
+    const robots=[1,2,3].map(id=>{
+      const conn=S.conn[id], active=id===S.activeRobot;
+      return {
+        id, label:'R'+id, color:C[id],
+        dotColor: conn?C[id]:'#6a4a4a', dotAnim: conn?'none':'blink 1s infinite',
+        statusText: conn?'OK':'SIN SEÑAL', statusColor: conn?C[id]:'#f0524f',
+        connected:conn, onSelect:()=>this.selectRobot(id),
+        selBg: active? this.hexA(C[id],0.12):'#0e1310',
+        selBorder: active? C[id]:'#1d2723',
+        selTextColor: active? C[id]:'#3a463e',
+        selMark: active? '◉ ACTIVO':'○',
+        selHint: 'destino de teleop',
+      };
+    });
+
+    const prims=['erratico','normal','ansioso'];
+    const defs=[
+      {key:'v_angular',  label:'velocidad angular', min:0, max:3,  step:0.1,  unit:'rad/s', fmt:v=>(+v).toFixed(1)},
+      {key:'jitter_amp', label:'amplitud jitter',   min:0, max:1,  step:0.05, unit:'',      fmt:v=>(+v).toFixed(2)},
+      {key:'jitter_freq',label:'frecuencia jitter', min:0, max:10, step:0.5,  unit:'Hz',    fmt:v=>(+v).toFixed(1)},
+      {key:'p_reversa',  label:'prob. reversa',     min:0, max:1,  step:0.05, unit:'',      fmt:v=>Math.round(v*100)+'%'},
+    ];
+    const coreoCards=[1,2,3].map(id=>{
+      const c=S.choreography[id], conn=S.conn[id];
+      return {
+        id, label:'R'+id, color:C[id],
+        cardBorder:'#1d2723', headBg:this.hexA(C[id],0.06),
+        statusText: conn?'OK':'SIN SEÑAL', statusColor: conn?C[id]:'#f0524f',
+        prims: prims.map(p=>{ const on=p===c.primitiva; return {name:p, onClick:()=>this.setPrimitive(id,p), bg:on?this.hexA(C[id],0.15):'#0c100e', border:on?C[id]:'#1d2723', text:on?C[id]:'#69786e'}; }),
+        params: defs.map(d=>({key:d.key, label:d.label, min:d.min, max:d.max, step:d.step, unit:d.unit, value:c.params[d.key], display:d.fmt(c.params[d.key]), onInput:(e)=>this.setParam(id,d.key,e.target.value)})),
+      };
+    });
+
+    const active=S.conn[S.activeRobot];
+    const dir = (Math.abs(S.vl)<0.05 && Math.abs(S.va)<0.05) ? 'DETENIDO'
+      : [ S.vl>0.05?'ADEL':(S.vl<-0.05?'ATRÁS':''), S.va>0.05?'DER':(S.va<-0.05?'IZQ':'') ].filter(Boolean).join(' · ');
+
+    const logRows=S.log.map(l=>({...l,
+      color:{teleop:'#46d98a',coreografia:'#38c8d6',stop_all:'#f0524f',select:'#69786e',info:'#69786e',save:'#e0b24a',load:'#e0b24a',run:'#7af0b0'}[l.tipo]||'#c2d0c7',
+      dirColor: l.dir==='TX'?'#46d98a':(l.dir==='SYS'?'#5d6e63':'#c2d0c7'),
+    }));
+
+    const comps=[
+      {c:'Selector de robot',     s:'activeRobot ∈ {1,2,3}',                 e:'click → selectRobot(id)'},
+      {c:'Joystick virtual',      s:'{v_lineal, v_angular} ∈ [-1,1]',        e:'pointerdown/move/up → sendTeleop()'},
+      {c:'Teclas WASD',           s:'_keys{w,a,s,d}',                        e:'keydown/keyup → sendTeleop()'},
+      {c:'Tarjeta telemetría',    s:'enlace HB del robot activo',            e:'render con cada heartbeat'},
+      {c:'Selector primitiva',    s:'choreography[id].primitiva',            e:'click → setPrimitive(id,p)'},
+      {c:'Sliders parámetros',    s:'params{v_angular,jitter_amp,jitter_freq,p_reversa}', e:'input → setParam(id,key,val)'},
+      {c:'Botón START',           s:'running:bool · countdown:3→0',          e:'click → startChoreography() (t_start=now+3s)'},
+      {c:'Botón STOP',            s:'running=false',                         e:'click → stopAll()'},
+      {c:'PARO EMERGENCIA',       s:'siempre habilitado',                    e:'click → emergencyStop() → stop_all'},
+      {c:'Guardar / Cargar',      s:'slot localStorage',                     e:'click → saveChoreo() / loadChoreo()'},
+      {c:'Panel gateway',         s:'{port, baud, connected}',               e:'serial open/close'},
+      {c:'Heartbeat robots',      s:'conn{1,2,3}:bool',                      e:'timeout → SIN SEÑAL'},
+      {c:'Log de comandos',       s:'log[]{ts,dir,tipo,payload}',            e:'append en cada envío · export → .txt'},
+    ].map((r,i)=>({...r, bg: i%2? '#0a0e0c':'#0c110e'}));
+
+    const acts=[
+      {a:'Mover joystick / WASD',        cmd:'{ tipo:"teleop", robot_id, v_lineal, v_angular }', cmdColor:'#46d98a'},
+      {a:'Soltar joystick / sin tecla',  cmd:'{ tipo:"teleop", robot_id, v_lineal:0, v_angular:0 }', cmdColor:'#46d98a'},
+      {a:'Seleccionar robot 1/2/3',      cmd:'— sin envío · cambia robot_id destino del teleop', cmdColor:'#69786e'},
+      {a:'Cambiar primitiva / slider',   cmd:'— sin envío inmediato · se aplica en el próximo START', cmdColor:'#69786e'},
+      {a:'START (coreografía)',          cmd:'{ tipo:"coreografia", asignaciones:{ id:{primitiva,params} }, t_start }', cmdColor:'#38c8d6'},
+      {a:'STOP',                         cmd:'{ tipo:"stop_all" }', cmdColor:'#f0524f'},
+      {a:'PARO DE EMERGENCIA',           cmd:'{ tipo:"stop_all", motivo:"PARO_EMERGENCIA" }  · prioridad máxima', cmdColor:'#f0524f'},
+    ].map((r,i)=>({...r, bg: i%2? '#0a0e0c':'#0c110e'}));
+
+    const schemaText =
+`Teleop:
+  { tipo:"teleop", robot_id, v_lineal, v_angular }
+
+Coreografía:
+  { tipo:"coreografia",
+    asignaciones:{ robot_id:{ primitiva, params } },
+    t_start }
+
+Paro:
+  { tipo:"stop_all" }
+
+Transporte:
+  GUI ──serial──▶ ESP32 gateway ──ESP-NOW broadcast──▶ R1 R2 R3
+  START usa t_start común para disparo sincronizado.`;
+
+    return {
+      // tabs / mode
+      showTeleop:S.mode==='teleop', showCoreo:S.mode==='coreografia', showEsquema:S.mode==='esquema',
+      showLog:S.mode!=='esquema',
+      goTeleop:()=>this.setState({mode:'teleop'}), goCoreo:()=>this.setState({mode:'coreografia'}), goEsquema:()=>this.setState({mode:'esquema'}),
+      teleopTabColor:S.mode==='teleop'?'#d6e2da':'#5d6e63',
+      coreoTabColor:S.mode==='coreografia'?'#d6e2da':'#5d6e63',
+      esquemaTabColor:S.mode==='esquema'?'#d6e2da':'#5d6e63',
+      runLabel:S.running?'EJECUTANDO':(S.countdown!=null?'CUENTA ATRÁS':'EN ESPERA'),
+      runDotColor:S.running?'#46d98a':(S.countdown!=null?'#e0b24a':'#3a463e'),
+      // status bar
+      gateway:{port:S.gateway.port, baudLabel:'@'+S.gateway.baud, statusLabel:S.gateway.connected?'CONECTADO':'DESCONECTADO'},
+      robots, clock:S.clock,
+      emergencyStop:this.emergencyStop,
+      // teleop
+      baseRef:this.baseRef, knobRef:this.knobRef, onJoyDown:this.onJoyDown,
+      activeLabel:'R'+S.activeRobot, activeStatusText:active?'CONECTADO':'SIN SEÑAL', activeStatusColor:active?C[S.activeRobot]:'#f0524f',
+      vlDisp:S.vl.toFixed(2), vaDisp:S.va.toFixed(2), dirLabel:dir,
+      // coreo
+      coreoCards, startChoreography:this.startChoreography, stopAll:this.stopAll, saveChoreo:this.saveChoreo, loadChoreo:this.loadChoreo,
+      hasCountdown:S.countdown!=null, countdown:S.countdown, tStartDisp:S.tStart?this.fmtClock(new Date(S.tStart)):'',
+      // log
+      logRef:this.logRef, logRows, logCount:S.log.length, exportLog:this.exportLog,
+      // esquema
+      comps, acts, schemaText,
+      // toast
+      hasToast:!!S.toast, toast:S.toast,
+    };
+  }
+}
+</script>
+</body>
+</html>
