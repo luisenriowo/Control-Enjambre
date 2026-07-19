@@ -145,7 +145,6 @@
           <div style="display:grid;grid-template-columns:repeat(3,96px);grid-template-rows:repeat(3,96px);gap:10px;">
             <button onPointerDown="{{ padDownU }}" onPointerUp="{{ padUpU }}" onPointerCancel="{{ padUpU }}" style="grid-column:2;grid-row:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;background:{{ padU.bg }};border:1.5px solid {{ padU.border }};border-radius:8px;color:{{ padU.color }};box-shadow:{{ padU.glow }};font-family:inherit;font-size:9px;font-weight:700;letter-spacing:1px;cursor:pointer;touch-action:none;user-select:none;"><span style="font-size:26px;line-height:1;">▲</span>ADELANTE</button>
             <button onPointerDown="{{ padDownL }}" onPointerUp="{{ padUpL }}" onPointerCancel="{{ padUpL }}" style="grid-column:1;grid-row:2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;background:{{ padL.bg }};border:1.5px solid {{ padL.border }};border-radius:8px;color:{{ padL.color }};box-shadow:{{ padL.glow }};font-family:inherit;font-size:9px;font-weight:700;letter-spacing:1px;cursor:pointer;touch-action:none;user-select:none;"><span style="font-size:26px;line-height:1;">◀</span>IZQ</button>
-            <button onClick="{{ padStop }}" style="grid-column:2;grid-row:2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;background:#120d0d;border:1.5px solid #4a2424;border-radius:8px;color:#b06a68;font-family:inherit;font-size:9px;font-weight:700;letter-spacing:1px;cursor:pointer;touch-action:none;user-select:none;" style-hover="border-color:#f0524f;color:#ff938f;"><span style="font-size:20px;line-height:1;">■</span>STOP</button>
             <button onPointerDown="{{ padDownR }}" onPointerUp="{{ padUpR }}" onPointerCancel="{{ padUpR }}" style="grid-column:3;grid-row:2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;background:{{ padR.bg }};border:1.5px solid {{ padR.border }};border-radius:8px;color:{{ padR.color }};box-shadow:{{ padR.glow }};font-family:inherit;font-size:9px;font-weight:700;letter-spacing:1px;cursor:pointer;touch-action:none;user-select:none;"><span style="font-size:26px;line-height:1;">▶</span>DER</button>
             <button onPointerDown="{{ padDownD }}" onPointerUp="{{ padUpD }}" onPointerCancel="{{ padUpD }}" style="grid-column:2;grid-row:3;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;background:{{ padD.bg }};border:1.5px solid {{ padD.border }};border-radius:8px;color:{{ padD.color }};box-shadow:{{ padD.glow }};font-family:inherit;font-size:9px;font-weight:700;letter-spacing:1px;cursor:pointer;touch-action:none;user-select:none;"><span style="font-size:26px;line-height:1;">▼</span>ATRÁS</button>
           </div>
@@ -464,7 +463,6 @@ class Component extends DCLogic {
   }
   padUp(dir){ if(!this._pad[dir]) return; this._pad[dir]=false; this.applyMove(); }
   resetPad(){ this._pad={up:false, down:false, left:false, right:false}; this._keys={}; this.applyMove(); }
-  padStop = ()=>this.resetPad();
 
   handleKey(e,down){
     const k=(e.key||'').toLowerCase();
@@ -634,7 +632,6 @@ Transporte:
       padDownD:(e)=>this.padDown('down',e),  padUpD:()=>this.padUp('down'),
       padDownL:(e)=>this.padDown('left',e),  padUpL:()=>this.padUp('left'),
       padDownR:(e)=>this.padDown('right',e), padUpR:()=>this.padUp('right'),
-      padStop:this.padStop,
       activeLabel:'R'+S.activeRobot, activeStatusText:active?'CONECTADO':'SIN SEÑAL', activeStatusColor:active?C[S.activeRobot]:'#f0524f',
       vlDisp:S.vl.toFixed(2), vaDisp:S.va.toFixed(2), dirLabel:dir,
       // coreo
