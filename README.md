@@ -71,6 +71,13 @@ pueda leerlas desde otro origen.
 Por eso el cliente debe **reenviar el comando cada ~250 ms** mientras se mantenga
 pulsada la cruceta. El front y la página de respaldo ya lo hacen.
 
+Esos reenvíos **no leen la respuesta**: el comando surte efecto al llegar, así que el
+acuse no aporta nada y a 4 Hz llenaría el log de falsos errores en un enlace lento
+(medido: con 600 ms de latencia el carrito obedece los comandos igual, pero el cliente
+los daría todos por fallidos). El acuse solo se lee en las acciones puntuales —primera
+pulsación, STOP y paro de emergencia, donde el reintento depende de él— y para saber
+qué está ejecutando cada carrito se usa `/estado`.
+
 ## Flashear un carrito
 
 1. Copia la plantilla de credenciales y edítala:

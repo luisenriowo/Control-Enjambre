@@ -307,6 +307,11 @@ class Component extends DCLogic {
     this.POLL_MS = 500;          // sondeo de /estado por robot
     this.KEEP_MS = 250;          // reenvío mientras se mantiene pulsada la cruceta
     this.HTTP_TIMEOUT_MS = 400;  // corta la petición para no congelar la UI
+    // El reenvío aborta antes del siguiente tick (200 < 250) para que el guardia
+    // de "en vuelo" se libere siempre a tiempo. Si no, en un enlace lento el
+    // intervalo efectivo se acercaría al failsafe de 700 ms y el carrito daría
+    // tirones. Abortar no cancela el comando: ya surtió efecto al llegar.
+    this.KEEP_ABORT_MS = 200;
 
     // La velocidad NO se manda desde aquí: /comando la acepta como parámetro
     // opcional y, al omitirlo, cada movimiento usa la de config.h (255 recto,
@@ -331,8 +336,8 @@ class Component extends DCLogic {
     };
     this._pad = {up:false, down:false, left:false, right:false};
     this._keys = {};
-    this._keep = null;                        // intervalo de keep-alive del teleop
-    this._txFail = {1:false, 2:false, 3:false}; // para no repetir el mismo error en el log
+    this._keep = null;          // intervalo de keep-alive del teleop
+    this._keepEnVuelo = false;  // hay un reenvío sin terminar: no encolar otro
   }
 
   componentDidMount(){
@@ -391,9 +396,9 @@ class Component extends DCLogic {
   }
 
   // GET con timeout: un carrito apagado no debe congelar la UI ni el sondeo.
-  async httpGet(ip,path){
+  async httpGet(ip,path,timeoutMs){
     const ctrl = new AbortController();
-    const t = setTimeout(()=>ctrl.abort(), this.HTTP_TIMEOUT_MS);
+    const t = setTimeout(()=>ctrl.abort(), timeoutMs || this.HTTP_TIMEOUT_MS);
     try{
       const r = await fetch(`http://${ip}${path}`, {signal:ctrl.signal, cache:'no-store'});
       if(!r.ok) throw new Error('HTTP '+r.status);
@@ -429,27 +434,43 @@ class Component extends DCLogic {
     return null;
   }
 
+  // Envío CON acuse, para las acciones puntuales: primera pulsación, STOP y
+  // paro de emergencia. Ahí sí interesa la respuesta, porque el reintento del
+  // paro depende de saber si llegó.
   // Sin parámetro v: el PWM lo decide el firmware con las constantes de config.h.
-  // silencioso = repetición del keep-alive: no ensucia el log (4 envíos/s).
-  async sendComando(robotId, c, silencioso){
+  async sendComando(robotId, c){
     const ip = this.ipDe(robotId);
-    if(!ip){ if(!silencioso) this.flashToast('R'+robotId+' no tiene IP configurada'); return false; }
+    if(!ip){ this.flashToast('R'+robotId+' no tiene IP configurada'); return false; }
     try{
       const j = await this.httpGet(ip, `/comando?c=${c}`);
-      this._txFail[robotId] = false;
-      if(!silencioso) this.logCmd('RX','ack',{robot_id:(j.robot_id!=null?j.robot_id:robotId), accion:j.accion, v:j.v});
+      this.logCmd('RX','ack',{robot_id:(j.robot_id!=null?j.robot_id:robotId), accion:j.accion, v:j.v});
       return true;
     }catch(err){
       const motivo = (err && err.name==='AbortError')
         ? ('sin respuesta en '+this.HTTP_TIMEOUT_MS+' ms')
         : ((err && err.message) || String(err));
-      // Un fallo se registra una vez por racha, no en cada reenvío.
-      if(!silencioso || !this._txFail[robotId]){
+      // Si el heartbeat ya da al robot por SIN SEÑAL, el fallo no informa de
+      // nada nuevo: su tarjeta ya lo dice. Solo se registra cuando contradice
+      // al heartbeat, que es el caso que sorprende y merece mirarse. Así una
+      // demo sin carritos conectados no se llena de líneas rojas.
+      if(this.state.conn[robotId]){
         this.logCmd('RX','error',{robot_id:robotId, ip, error:motivo});
       }
-      this._txFail[robotId] = true;
       return false;
     }
+  }
+
+  // Reenvío del keep-alive: dispara y olvida. No se lee la respuesta ni se
+  // registra el fallo. A 4 envíos/s un enlace lento llenaría el log de errores
+  // mientras el carrito obedece igual de bien, porque el comando surte efecto
+  // al llegar y la respuesta ya no influye en nada. Quién está vivo y qué está
+  // ejecutando lo dice /estado, que se sondea a 2 Hz y trae ms_desde_cmd.
+  refrescarComando(robotId, c){
+    const ip = this.ipDe(robotId);
+    if(!ip){ this._keepEnVuelo = false; return; }
+    this.httpGet(ip, `/comando?c=${c}`, this.KEEP_ABORT_MS)
+      .catch(()=>{})   // fallo esperado en enlace lento: el comando llegó igual
+      .then(()=>{ this._keepEnVuelo = false; });
   }
 
   txCmd(tipo,payload){
@@ -478,10 +499,17 @@ class Component extends DCLogic {
   // la cruceta esté pulsada hay que refrescar el comando vigente.
   armKeepAlive(dir){
     if(this._keep){ clearInterval(this._keep); this._keep=null; }
+    this._keepEnVuelo = false;
     if(!dir || dir==='S') return;
     const id = this.state.activeRobot;
     if(!this.ipDe(id)) return;   // sin IP no hay nada que refrescar
-    this._keep = setInterval(()=>this.sendComando(id, dir, true), this.KEEP_MS);
+    this._keep = setInterval(()=>{
+      // El ESP32 atiende de una petición en una: apilar reenvíos solo suma
+      // latencia. Si el anterior no ha vuelto, se salta este tick.
+      if(this._keepEnVuelo) return;
+      this._keepEnVuelo = true;
+      this.refrescarComando(id, dir);
+    }, this.KEEP_MS);
   }
 
   // ---- cruceta (D-pad) ----
@@ -662,7 +690,8 @@ class Component extends DCLogic {
       {c:'Teclas WASD',           s:'_keys{w,a,s,d}',                        e:'keydown/keyup → dirActiva() → sendTeleop()'},
       {c:'Prioridad de la cruceta', s:'una sola letra por comando',          e:'opuestas se anulan · avanzar gana a girar'},
       {c:'Velocidad (PWM)',       s:'no es estado de la GUI',                e:'no se envía · la fija config.h del firmware'},
-      {c:'Keep-alive teleop',     s:'_keep · activo mientras dir ≠ S',       e:'reenvía la letra cada 250 ms (silencioso)'},
+      {c:'Keep-alive teleop',     s:'_keep · activo mientras dir ≠ S',       e:'reenvía la letra cada 250 ms · dispara y olvida'},
+      {c:'Guardia de reenvío',    s:'_keepEnVuelo',                          e:'si el reenvío anterior sigue en vuelo, se salta el tick'},
       {c:'Tarjeta telemetría',    s:'tel[id] = última respuesta de /estado', e:'render en cada sondeo (~2 Hz)'},
       {c:'Heartbeat robots',      s:'conn{1,2,3}',                           e:'GET /estado OK → verde · timeout 400 ms → SIN SEÑAL'},
       {c:'Selector primitiva',    s:'choreography[id].primitiva',            e:'click → setPrimitive(id,p) · solo maqueta'},
@@ -671,12 +700,13 @@ class Component extends DCLogic {
       {c:'Botón STOP',            s:'running=false',                         e:'click → c=S a todas las IPs configuradas'},
       {c:'PARO EMERGENCIA',       s:'siempre habilitado',                    e:'click → corta keep-alive + c=S a todos + reintento'},
       {c:'Guardar / Cargar',      s:'slot localStorage (coreografía)',       e:'click → saveChoreo() / loadChoreo()'},
-      {c:'Log de comandos',       s:'log[]{ts,dir,tipo,payload}',            e:'TX al enviar · RX con el ack del carrito · export → .txt'},
+      {c:'Log de comandos',       s:'log[]{ts,dir,tipo,payload}',            e:'TX al enviar · RX solo de acciones puntuales · export → .txt'},
+      {c:'Filtro de errores RX',  s:'depende de conn[id]',                   e:'con el robot en SIN SEÑAL no se registra: su tarjeta ya lo dice'},
     ].map((r,i)=>({...r, bg: i%2? '#0a0e0c':'#0c110e'}));
 
     const acts=[
-      {a:'Pulsar cruceta / WASD',        cmd:'GET http://<ip_del_robot>/comando?c=A|R|D|I', cmdColor:'#46d98a'},
-      {a:'Mantener pulsado',             cmd:'la misma petición cada 250 ms · sin ella el firmware para a los 700 ms', cmdColor:'#46d98a'},
+      {a:'Pulsar cruceta / WASD',        cmd:'GET http://<ip_del_robot>/comando?c=A|R|D|I  · con acuse en el log', cmdColor:'#46d98a'},
+      {a:'Mantener pulsado',             cmd:'la misma petición cada 250 ms, sin leer la respuesta · sin ella el firmware para a los 700 ms', cmdColor:'#46d98a'},
       {a:'Soltar cruceta / sin tecla',   cmd:'GET /comando?c=S', cmdColor:'#46d98a'},
       {a:'Seleccionar robot 1/2/3',      cmd:'— sin envío · cambia la IP destino del teleop', cmdColor:'#69786e'},
       {a:'Escribir la IP de un robot',   cmd:'— sin envío · se guarda en localStorage y empieza a sondearse', cmdColor:'#69786e'},
@@ -706,6 +736,17 @@ class Component extends DCLogic {
 Failsafe (en el firmware, no en la GUI):
   700 ms sin comandos → STOP automático
   Wi-Fi caído         → STOP automático
+
+Acuses:
+  El comando surte efecto AL LLEGAR: la respuesta ya no
+  influye. Solo se lee en acciones puntuales (1ª pulsación,
+  STOP, paro), donde el reintento depende de ella.
+  Los reenvíos del keep-alive disparan y olvidan: leerlos
+  a 4 Hz llenaría el log de falsos errores en un enlace
+  lento. Para saber qué ejecuta cada carrito está /estado.
+  Un fallo solo se registra si el robot figuraba EN LÍNEA:
+  si ya estaba en SIN SEÑAL, su tarjeta lo dice y la línea
+  roja no añadiría nada.
 
 Transporte:
   GUI (navegador) ──HTTP/JSON + CORS──▶ ESP32 R1
