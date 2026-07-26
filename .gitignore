@@ -1,0 +1,8 @@
+# Credenciales WiFi de cada carrito (usa secrets.h.example como plantilla)
+secrets.h
+
+# Artefactos de compilación de Arduino / PlatformIO
+build/
+.pio/
+*.bin
+*.elf

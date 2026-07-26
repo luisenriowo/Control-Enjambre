@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Carrito · respaldo</title>
+<style>
+  /* Página de respaldo servida desde LittleFS: control mínimo sin PC ni CDN.
+     La interfaz completa es Control Enjambre.dc.html, que corre en el navegador. */
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;padding:16px;background:#070908;color:#c2d0c7;font-family:ui-monospace,Menlo,Consolas,monospace;user-select:none}
+  h1{margin:0 0 4px;font-size:14px;letter-spacing:2px;color:#46d98a}
+  .sub{font-size:11px;color:#5d6e63;margin-bottom:14px;line-height:1.5}
+  #estado{font-size:11px;padding:8px 10px;background:#0e1310;border:1px solid #1d2723;border-radius:4px;margin-bottom:14px;white-space:pre-wrap}
+  .pad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:320px}
+  button{background:#0e1310;border:1.5px solid #243029;border-radius:8px;color:#8a9990;
+    font:700 11px/1 ui-monospace,monospace;letter-spacing:1px;padding:22px 4px;cursor:pointer;touch-action:none}
+  button:active,button.on{background:rgba(70,217,138,.16);border-color:#46d98a;color:#7af0b0}
+  #stop{border-color:#f0524f;color:#ff938f;background:#2a0c0c}
+  .u{grid-column:2}.l{grid-column:1;grid-row:2}.s{grid-column:2;grid-row:2}.r{grid-column:3;grid-row:2}.d{grid-column:2;grid-row:3}
+  label{display:block;font-size:10px;color:#5d6e63;margin:16px 0 6px;letter-spacing:1px}
+  input[type=range]{width:100%;max-width:320px;accent-color:#46d98a}
+</style>
+</head>
+<body>
+<h1>CARRITO · RESPALDO</h1>
+<div class="sub">Control de emergencia sin PC. Mantén pulsado para mover:<br>al soltar (o si se corta el enlace) el carrito se detiene solo.</div>
+<div id="estado">conectando…</div>
+
+<div class="pad">
+  <button class="u" data-c="A">▲<br>ADELANTE</button>
+  <button class="l" data-c="I">◀<br>IZQ</button>
+  <button class="s" id="stop">■<br>STOP</button>
+  <button class="r" data-c="D">▶<br>DER</button>
+  <button class="d" data-c="R">▼<br>ATRÁS</button>
+</div>
+
+<label for="vel">VELOCIDAD · <span id="velTxt">255</span></label>
+<input id="vel" type="range" min="60" max="255" step="5" value="255">
+
+<script>
+var vel = document.getElementById('vel');
+var velTxt = document.getElementById('velTxt');
+vel.oninput = function(){ velTxt.textContent = vel.value; };
+
+function enviar(c){
+  fetch('/comando?c=' + c + '&v=' + vel.value).catch(function(){});
+}
+
+// El firmware para el carrito si pasan 700 ms sin comandos, así que mientras
+// el dedo esté sobre el botón hay que refrescar el comando.
+var keep = null;
+function iniciar(c, btn){
+  if (keep) clearInterval(keep);
+  btn.classList.add('on');
+  enviar(c);
+  keep = setInterval(function(){ enviar(c); }, 250);
+}
+function detener(){
+  if (keep){ clearInterval(keep); keep = null; }
+  var on = document.querySelectorAll('button.on');
+  for (var i = 0; i < on.length; i++) on[i].classList.remove('on');
+  enviar('S');
+}
+
+var pads = document.querySelectorAll('button[data-c]');
+for (var i = 0; i < pads.length; i++){
+  (function(b){
+    b.addEventListener('pointerdown', function(e){
+      if (b.setPointerCapture) { try{ b.setPointerCapture(e.pointerId); }catch(_){} }
+      iniciar(b.dataset.c, b);
+    });
+    b.addEventListener('pointerup', detener);
+    b.addEventListener('pointercancel', detener);
+  })(pads[i]);
+}
+document.getElementById('stop').addEventListener('click', detener);
+window.addEventListener('blur', detener);
+
+setInterval(function(){
+  fetch('/estado').then(function(r){ return r.json(); }).then(function(s){
+    document.getElementById('estado').textContent =
+      'R' + s.robot_id + ' · fw ' + s.fw + ' · ' + s.ip +
+      '\nrssi ' + s.rssi + ' dBm · up ' + Math.round(s.up_ms / 1000) + ' s' +
+      '\nultimo ' + s.ultimo + ' · v ' + s.v + ' · ' + (s.movimiento ? 'EN MOVIMIENTO' : 'detenido');
+  }).catch(function(){
+    document.getElementById('estado').textContent = 'sin respuesta del carrito';
+  });
+}, 1000);
+</script>
+</body>
+</html>
