@@ -38,11 +38,18 @@ sin reflashear los carritos y sin mantener 3 copias de la interfaz.
 | `I` | izquierda  |
 | `S` | stop       |
 
-`v` es el PWM y es opcional (por defecto 255 en recto, 200 en giro).
-
 ```json
 {"ok":true,"robot_id":1,"accion":"Adelante","c":"A","v":255,"t":91234}
 ```
+
+La interfaz habla en las mismas direcciones que el firmware — no hay traducción de
+velocidad lineal/angular por medio.
+
+**La velocidad no se controla desde ninguna interfaz.** La fijan las constantes de
+[config.h](firmware/Carrito_swarmV5/config.h) (`VelocidadMax` 255 en recto,
+`VelocidadGiro` 200 en giro) y se cambian recompilando. `/comando` acepta un `v`
+opcional para pruebas con `curl`, pero ni el front ni la página de respaldo lo envían:
+así el PWM vive en un solo sitio.
 
 ### `GET /estado`
 
@@ -105,6 +112,8 @@ y ese robot no se sondea.
 ### Controles
 
 - **Cruceta o W/A/S/D**: teleop del robot activo. Hay que mantener pulsado.
+  Si se pulsan dos direcciones a la vez, las opuestas se anulan y avanzar gana a girar
+  (el firmware acepta una sola letra por comando).
 - **PARO DE EMERGENCIA**: manda STOP a *todos* los carritos configurados, con reintento.
 - **LOG DE COMANDOS**: TX de cada envío, RX con el ack real del carrito, exportable a `.txt`.
 - **ESQUEMA**: documenta el contrato y el mapa de componentes de la GUI.
@@ -119,7 +128,7 @@ y ese robot no se sondea.
 
 | Función | Estado |
 |---|---|
-| Teleop (cruceta / WASD) con PWM | funcional |
+| Teleop (cruceta / WASD) | funcional |
 | Heartbeat y telemetría por robot | funcional |
 | Paro de emergencia a todos | funcional |
 | Failsafe por timeout y por Wi-Fi | funcional |

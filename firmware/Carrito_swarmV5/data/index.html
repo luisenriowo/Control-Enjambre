@@ -18,8 +18,6 @@
   button:active,button.on{background:rgba(70,217,138,.16);border-color:#46d98a;color:#7af0b0}
   #stop{border-color:#f0524f;color:#ff938f;background:#2a0c0c}
   .u{grid-column:2}.l{grid-column:1;grid-row:2}.s{grid-column:2;grid-row:2}.r{grid-column:3;grid-row:2}.d{grid-column:2;grid-row:3}
-  label{display:block;font-size:10px;color:#5d6e63;margin:16px 0 6px;letter-spacing:1px}
-  input[type=range]{width:100%;max-width:320px;accent-color:#46d98a}
 </style>
 </head>
 <body>
@@ -35,16 +33,10 @@
   <button class="d" data-c="R">▼<br>ATRÁS</button>
 </div>
 
-<label for="vel">VELOCIDAD · <span id="velTxt">255</span></label>
-<input id="vel" type="range" min="60" max="255" step="5" value="255">
-
 <script>
-var vel = document.getElementById('vel');
-var velTxt = document.getElementById('velTxt');
-vel.oninput = function(){ velTxt.textContent = vel.value; };
-
+// Sin parámetro v: la velocidad la fijan las constantes de config.h.
 function enviar(c){
-  fetch('/comando?c=' + c + '&v=' + vel.value).catch(function(){});
+  fetch('/comando?c=' + c).catch(function(){});
 }
 
 // El firmware para el carrito si pasan 700 ms sin comandos, así que mientras
@@ -82,7 +74,7 @@ setInterval(function(){
     document.getElementById('estado').textContent =
       'R' + s.robot_id + ' · fw ' + s.fw + ' · ' + s.ip +
       '\nrssi ' + s.rssi + ' dBm · up ' + Math.round(s.up_ms / 1000) + ' s' +
-      '\nultimo ' + s.ultimo + ' · v ' + s.v + ' · ' + (s.movimiento ? 'EN MOVIMIENTO' : 'detenido');
+      '\nultimo ' + s.ultimo + ' · ' + (s.movimiento ? 'EN MOVIMIENTO' : 'detenido');
   }).catch(function(){
     document.getElementById('estado').textContent = 'sin respuesta del carrito';
   });

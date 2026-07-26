@@ -132,19 +132,11 @@
               <span style="font-size:11px;font-weight:700;color:#c2d0c7;">{{ activeUltimo }}</span>
             </div>
             <div style="display:flex;justify-content:space-between;align-items:center;">
-              <span style="font-size:11px;color:#69786e;">tx · v_lineal</span>
-              <span style="font-size:13px;font-weight:700;color:#c2d0c7;">{{ vlDisp }}</span>
-            </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;">
-              <span style="font-size:11px;color:#69786e;">tx · v_angular</span>
-              <span style="font-size:13px;font-weight:700;color:#c2d0c7;">{{ vaDisp }}</span>
-            </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;">
-              <span style="font-size:11px;color:#69786e;">dirección</span>
+              <span style="font-size:11px;color:#69786e;">tx · dirección</span>
               <span style="font-size:12px;font-weight:700;letter-spacing:1px;color:#46d98a;">{{ dirLabel }}</span>
             </div>
             <div style="margin-top:auto;font-size:9px;line-height:1.5;color:#4a574e;border-top:1px solid #1d2723;padding-top:9px;">
-              señal / uptime / ack vienen de GET /estado (~2 Hz). v_lineal / v_angular = comando emitido, no medición a bordo.
+              señal / uptime / ack vienen de GET /estado (~2 Hz). dirección = comando emitido, no medición a bordo. La velocidad la fija el firmware.
             </div>
           </div>
         </div>
@@ -164,16 +156,9 @@
             <button onPointerDown="{{ padDownD }}" onPointerUp="{{ padUpD }}" onPointerCancel="{{ padUpD }}" style="grid-column:2;grid-row:3;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;background:{{ padD.bg }};border:1.5px solid {{ padD.border }};border-radius:8px;color:{{ padD.color }};box-shadow:{{ padD.glow }};font-family:inherit;font-size:9px;font-weight:700;letter-spacing:1px;cursor:pointer;touch-action:none;user-select:none;"><span style="font-size:26px;line-height:1;">▼</span>ATRÁS</button>
           </div>
 
-          <div style="display:flex;gap:34px;margin-top:22px;">
-            <div style="text-align:center;">
-              <div style="font-size:9px;letter-spacing:1px;color:#5d6e63;">V_LINEAL</div>
-              <div style="font-size:26px;font-weight:800;color:#c2d0c7;">{{ vlDisp }}</div>
-            </div>
-            <div style="width:1px;background:#1d2723;"></div>
-            <div style="text-align:center;">
-              <div style="font-size:9px;letter-spacing:1px;color:#5d6e63;">V_ANGULAR</div>
-              <div style="font-size:26px;font-weight:800;color:#c2d0c7;">{{ vaDisp }}</div>
-            </div>
+          <div style="text-align:center;margin-top:22px;">
+            <div style="font-size:9px;letter-spacing:1px;color:#5d6e63;">DIRECCIÓN</div>
+            <div style="font-size:26px;font-weight:800;color:#c2d0c7;">{{ dirLabel }}</div>
           </div>
         </div>
       </div>
@@ -323,12 +308,9 @@ class Component extends DCLogic {
     this.KEEP_MS = 250;          // reenvío mientras se mantiene pulsada la cruceta
     this.HTTP_TIMEOUT_MS = 400;  // corta la petición para no congelar la UI
 
-    // La velocidad es un control propio del operador (slider), no se deduce de
-    // la dirección. El giro va algo más suave, en la misma proporción que tenía
-    // config.h (VelocidadGiro 200 / VelocidadMax 255).
-    this.VEL_DEFECTO = 255;
-    this.GIRO_RATIO  = 200/255;
-
+    // La velocidad NO se manda desde aquí: /comando la acepta como parámetro
+    // opcional y, al omitirlo, cada movimiento usa la de config.h (255 recto,
+    // 200 giro). Así el PWM vive en un solo sitio, el firmware.
     this.DIR_LABEL = {S:'DETENIDO', A:'ADELANTE', R:'ATRÁS', D:'DERECHA', I:'IZQUIERDA'};
 
     this.state = {
@@ -338,13 +320,12 @@ class Component extends DCLogic {
       tel:{1:null,2:null,3:null},              // última respuesta de /estado
       ips:{1:'10.136.8.207', 2:'', 3:''},      // una IP por carrito
       dir:'S',                                 // A | R | D | I | S
-      vel:255,                                 // PWM recto elegido por el operador
       clock:'',
       log:[],
       choreography:{
-        1:{primitiva:'normal',   params:{v_giro:140, jitter_amp:0.20, jitter_freq:2.0, p_reversa:0.10}},
-        2:{primitiva:'erratico', params:{v_giro:180, jitter_amp:0.60, jitter_freq:5.0, p_reversa:0.30}},
-        3:{primitiva:'ansioso',  params:{v_giro:220, jitter_amp:0.80, jitter_freq:7.5, p_reversa:0.45}},
+        1:{primitiva:'normal',   params:{v_angular:1.0, jitter_amp:0.20, jitter_freq:2.0, p_reversa:0.10}},
+        2:{primitiva:'erratico', params:{v_angular:1.6, jitter_amp:0.60, jitter_freq:5.0, p_reversa:0.30}},
+        3:{primitiva:'ansioso',  params:{v_angular:2.2, jitter_amp:0.80, jitter_freq:7.5, p_reversa:0.45}},
       },
       countdown:null, tStart:null, running:false, toast:'',
     };
@@ -361,7 +342,7 @@ class Component extends DCLogic {
     this._onKeyUp   = (e)=>this.handleKey(e,false);
     window.addEventListener('keydown', this._onKeyDown);
     window.addEventListener('keyup', this._onKeyUp);
-    this.loadPrefs();
+    this.loadIps();
     this._poll = setInterval(this.pollEstado, this.POLL_MS);
     this.pollEstado();
     this.logCmd('SYS','info',{msg:'transporte HTTP · un carrito = una IP', hint:'pega la IP de cada ESP32 en su tarjeta (columna izquierda)'});
@@ -385,15 +366,8 @@ class Component extends DCLogic {
       ()=>{ const el=this.logRef.current; if(el) el.scrollTop = el.scrollHeight; });
   }
 
-  // PWM que le corresponde a una dirección con la velocidad elegida.
-  velDe(dir){
-    if(!dir || dir==='S') return 0;
-    const v = this.state.vel;
-    return (dir==='D'||dir==='I') ? Math.round(v*this.GIRO_RATIO) : v;
-  }
-
   sendTeleop(dir){
-    this.txCmd('teleop',{tipo:'teleop', robot_id:this.state.activeRobot, dir, v:this.velDe(dir)});
+    this.txCmd('teleop',{tipo:'teleop', robot_id:this.state.activeRobot, dir});
   }
 
   // ---- transporte: HTTP a cada carrito ----
@@ -403,28 +377,17 @@ class Component extends DCLogic {
   ipDe(id){ return String(this.state.ips[id]||'').trim(); }
   robotsConfigurados(){ return [1,2,3].filter(id=>this.ipDe(id)); }
 
-  // IPs y velocidad se escriben una vez y sobreviven a la recarga.
-  loadPrefs(){
+  // Las IPs se escriben una vez y sobreviven a la recarga.
+  loadIps(){
     try{
       const raw = localStorage.getItem('enjambre_ips');
       if(raw) this.setState(s=>({ips:{...s.ips, ...JSON.parse(raw)}}));
-      const v = parseInt(localStorage.getItem('enjambre_vel'), 10);
-      if(v>=60 && v<=255) this.setState({vel:v});
     }catch(e){}
   }
   setIp(id,val){
     const ips = {...this.state.ips, [id]:String(val).trim()};
     this.setState({ips});
     try{ localStorage.setItem('enjambre_ips', JSON.stringify(ips)); }catch(e){}
-  }
-  setVel(val){
-    const vel = Math.max(60, Math.min(255, parseInt(val,10) || this.VEL_DEFECTO));
-    // Se rearma dentro del callback: velDe() lee this.state.vel, que hasta que
-    // setState no cuaja todavía tendría el valor anterior.
-    this.setState({vel}, ()=>{
-      if(this.state.dir!=='S') this.armKeepAlive(this.state.dir);
-    });
-    try{ localStorage.setItem('enjambre_vel', String(vel)); }catch(e){}
   }
 
   // GET con timeout: un carrito apagado no debe congelar la UI ni el sondeo.
@@ -457,24 +420,22 @@ class Component extends DCLogic {
     this.setState({conn, tel});
   };
 
-  // Pasa el payload al par (letra, PWM) del cable. El teleop ya viaja en
-  // direcciones, así que aquí no queda traducción: solo el caso de paro y el de
-  // la coreografía, que devuelve null y por eso queda como maqueta.
+  // Saca la letra que va al cable. El teleop ya viaja en direcciones, así que
+  // aquí no queda traducción: solo el caso de paro y el de la coreografía, que
+  // devuelve null y por eso queda como maqueta.
   payloadToCmd(tipo,payload){
-    if(tipo==='stop_all') return {c:'S', v:0};
-    if(tipo==='teleop'){
-      const dir = payload.dir || 'S';
-      return {c:dir, v: dir==='S' ? 0 : (payload.v||0)};
-    }
+    if(tipo==='stop_all') return 'S';
+    if(tipo==='teleop')   return payload.dir || 'S';
     return null;
   }
 
+  // Sin parámetro v: el PWM lo decide el firmware con las constantes de config.h.
   // silencioso = repetición del keep-alive: no ensucia el log (4 envíos/s).
-  async sendComando(robotId, c, v, silencioso){
+  async sendComando(robotId, c, silencioso){
     const ip = this.ipDe(robotId);
     if(!ip){ if(!silencioso) this.flashToast('R'+robotId+' no tiene IP configurada'); return false; }
     try{
-      const j = await this.httpGet(ip, `/comando?c=${c}&v=${v}`);
+      const j = await this.httpGet(ip, `/comando?c=${c}`);
       this._txFail[robotId] = false;
       if(!silencioso) this.logCmd('RX','ack',{robot_id:(j.robot_id!=null?j.robot_id:robotId), accion:j.accion, v:j.v});
       return true;
@@ -493,13 +454,13 @@ class Component extends DCLogic {
 
   txCmd(tipo,payload){
     this.logCmd('TX',tipo,payload);
-    const cmd = this.payloadToCmd(tipo,payload);
-    if(!cmd){
+    const letra = this.payloadToCmd(tipo,payload);
+    if(!letra){
       this.logCmd('SYS','info',{msg:'"'+tipo+'" es maqueta: el firmware actual no ejecuta primitivas'});
       return;
     }
     if(tipo==='stop_all') this.stopTodos();
-    else this.sendComando(payload.robot_id || this.state.activeRobot, cmd.c, cmd.v);
+    else this.sendComando(payload.robot_id || this.state.activeRobot, letra);
   }
 
   // El paro tiene que llegar a todos los carritos configurados, con reintento.
@@ -508,8 +469,8 @@ class Component extends DCLogic {
     const ids = this.robotsConfigurados();
     if(!ids.length){ this.flashToast('Ningún carrito configurado'); return; }
     ids.forEach(async id=>{
-      const ok = await this.sendComando(id,'S',0);
-      if(!ok) setTimeout(()=>this.sendComando(id,'S',0), 120);
+      const ok = await this.sendComando(id,'S');
+      if(!ok) setTimeout(()=>this.sendComando(id,'S'), 120);
     });
   }
 
@@ -520,8 +481,7 @@ class Component extends DCLogic {
     if(!dir || dir==='S') return;
     const id = this.state.activeRobot;
     if(!this.ipDe(id)) return;   // sin IP no hay nada que refrescar
-    const v = this.velDe(dir);
-    this._keep = setInterval(()=>this.sendComando(id, dir, v, true), this.KEEP_MS);
+    this._keep = setInterval(()=>this.sendComando(id, dir, true), this.KEEP_MS);
   }
 
   // ---- cruceta (D-pad) ----
@@ -657,7 +617,7 @@ class Component extends DCLogic {
 
     const prims=['erratico','normal','ansioso'];
     const defs=[
-      {key:'v_giro',     label:'PWM de giro',       min:60, max:255, step:5,  unit:'pwm',   fmt:v=>Math.round(v)},
+      {key:'v_angular',  label:'velocidad angular', min:0, max:3,  step:0.1,  unit:'rad/s', fmt:v=>(+v).toFixed(1)},
       {key:'jitter_amp', label:'amplitud jitter',   min:0, max:1,  step:0.05, unit:'',      fmt:v=>(+v).toFixed(2)},
       {key:'jitter_freq',label:'frecuencia jitter', min:0, max:10, step:0.5,  unit:'Hz',    fmt:v=>(+v).toFixed(1)},
       {key:'p_reversa',  label:'prob. reversa',     min:0, max:1,  step:0.05, unit:'',      fmt:v=>Math.round(v*100)+'%'},
@@ -689,7 +649,6 @@ class Component extends DCLogic {
     const onlineIds=confIds.filter(id=>S.conn[id]);
 
     const dirLabel = this.DIR_LABEL[S.dir] || S.dir;
-    const pwm = this.velDe(S.dir);
 
     const logRows=S.log.map(l=>({...l,
       color:{teleop:'#46d98a',coreografia:'#38c8d6',stop_all:'#f0524f',select:'#69786e',info:'#69786e',save:'#e0b24a',load:'#e0b24a',run:'#7af0b0',hb:'#69786e',ack:'#38c8d6',error:'#f0524f'}[l.tipo]||'#c2d0c7',
@@ -699,9 +658,11 @@ class Component extends DCLogic {
     const comps=[
       {c:'Selector de robot',     s:'activeRobot ∈ {1,2,3}',                 e:'click → selectRobot(id) · para el robot anterior si iba en marcha'},
       {c:'Campo IP por robot',    s:'ips{1,2,3} · guardado en localStorage',  e:'change → setIp(id,valor) · IP vacía = NO CONFIG'},
-      {c:'Cruceta (D-pad)',       s:'{v_lineal, v_angular} ∈ {-1,0,1}',      e:'pointerdown/pointerup → sendTeleop()'},
-      {c:'Teclas WASD',           s:'_keys{w,a,s,d}',                        e:'keydown/keyup → sendTeleop()'},
-      {c:'Keep-alive teleop',     s:'_keep · activo mientras vl|va ≠ 0',     e:'reenvía la letra cada 250 ms (silencioso)'},
+      {c:'Cruceta (D-pad)',       s:'dir ∈ {A,R,D,I,S}',                     e:'pointerdown/pointerup → dirActiva() → sendTeleop()'},
+      {c:'Teclas WASD',           s:'_keys{w,a,s,d}',                        e:'keydown/keyup → dirActiva() → sendTeleop()'},
+      {c:'Prioridad de la cruceta', s:'una sola letra por comando',          e:'opuestas se anulan · avanzar gana a girar'},
+      {c:'Velocidad (PWM)',       s:'no es estado de la GUI',                e:'no se envía · la fija config.h del firmware'},
+      {c:'Keep-alive teleop',     s:'_keep · activo mientras dir ≠ S',       e:'reenvía la letra cada 250 ms (silencioso)'},
       {c:'Tarjeta telemetría',    s:'tel[id] = última respuesta de /estado', e:'render en cada sondeo (~2 Hz)'},
       {c:'Heartbeat robots',      s:'conn{1,2,3}',                           e:'GET /estado OK → verde · timeout 400 ms → SIN SEÑAL'},
       {c:'Selector primitiva',    s:'choreography[id].primitiva',            e:'click → setPrimitive(id,p) · solo maqueta'},
@@ -714,25 +675,29 @@ class Component extends DCLogic {
     ].map((r,i)=>({...r, bg: i%2? '#0a0e0c':'#0c110e'}));
 
     const acts=[
-      {a:'Pulsar cruceta / WASD',        cmd:'GET http://<ip_del_robot>/comando?c=A|R|D|I&v=255|200', cmdColor:'#46d98a'},
+      {a:'Pulsar cruceta / WASD',        cmd:'GET http://<ip_del_robot>/comando?c=A|R|D|I', cmdColor:'#46d98a'},
       {a:'Mantener pulsado',             cmd:'la misma petición cada 250 ms · sin ella el firmware para a los 700 ms', cmdColor:'#46d98a'},
-      {a:'Soltar cruceta / sin tecla',   cmd:'GET /comando?c=S&v=0', cmdColor:'#46d98a'},
+      {a:'Soltar cruceta / sin tecla',   cmd:'GET /comando?c=S', cmdColor:'#46d98a'},
       {a:'Seleccionar robot 1/2/3',      cmd:'— sin envío · cambia la IP destino del teleop', cmdColor:'#69786e'},
       {a:'Escribir la IP de un robot',   cmd:'— sin envío · se guarda en localStorage y empieza a sondearse', cmdColor:'#69786e'},
       {a:'Cambiar primitiva / slider',   cmd:'— sin envío · maqueta: el firmware no ejecuta primitivas', cmdColor:'#e0b24a'},
       {a:'START (coreografía)',          cmd:'— sin envío · cuenta atrás local + registro en el log', cmdColor:'#e0b24a'},
-      {a:'STOP',                         cmd:'GET /comando?c=S&v=0 a cada IP configurada', cmdColor:'#f0524f'},
-      {a:'PARO DE EMERGENCIA',           cmd:'GET /comando?c=S&v=0 a todas las IPs + 1 reintento · prioridad máxima', cmdColor:'#f0524f'},
+      {a:'STOP',                         cmd:'GET /comando?c=S a cada IP configurada', cmdColor:'#f0524f'},
+      {a:'PARO DE EMERGENCIA',           cmd:'GET /comando?c=S a todas las IPs + 1 reintento · prioridad máxima', cmdColor:'#f0524f'},
       {a:'Sondeo automático',            cmd:'GET /estado cada 500 ms por robot · timeout 400 ms', cmdColor:'#38c8d6'},
     ].map((r,i)=>({...r, bg: i%2? '#0a0e0c':'#0c110e'}));
 
     const schemaText =
 `API del carrito · un ESP32 = un robot = una IP
 
-  GET /comando?c=A|R|D|I|S[&v=0..255]
+  GET /comando?c=A|R|D|I|S
     A adelante · R retroceder · D derecha · I izquierda · S stop
-    v = PWM opcional (por defecto 255 recto / 200 giro)
     → { ok, robot_id, accion, c, v, t }
+
+  La GUI habla en direcciones, igual que el firmware: no hay
+  traducción de velocidad lineal/angular ni control de PWM.
+  La velocidad la fija config.h en el carrito
+  (VelocidadMax 255 recto, VelocidadGiro 200 giro).
 
   GET /estado
     → { robot_id, fw, ip, rssi, up_ms,
@@ -783,9 +748,8 @@ Coreografía:
       activeStatusColor: active?C[S.activeRobot]:(activeIp?'#f0524f':'#5d6e63'),
       activeRssi:  t? (t.rssi+' dBm') : '—',
       activeUptime:t? (Math.round(t.up_ms/1000)+' s') : '—',
-      activeUltimo:t? (t.ultimo+' · v'+t.v) : '—',
-      dirLabel, pwmDisp:String(pwm),
-      vel:S.vel, onVelChange:(e)=>this.setVel(e.target.value),
+      activeUltimo:t? (this.DIR_LABEL[t.ultimo] || t.ultimo) : '—',
+      dirLabel,
       // coreo
       coreoCards, startChoreography:this.startChoreography, stopAll:this.stopAll, saveChoreo:this.saveChoreo, loadChoreo:this.loadChoreo,
       hasCountdown:S.countdown!=null, countdown:S.countdown, tStartDisp:S.tStart?this.fmtClock(new Date(S.tStart)):'',
